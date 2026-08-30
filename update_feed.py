@@ -46,6 +46,7 @@ SKIP_PHRASES = [
     "sign up here",
     "insatiably curious",
     "please support our sponsors",
+    "more"
 ]
 
 
