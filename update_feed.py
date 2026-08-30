@@ -174,11 +174,23 @@ def extract_section_html(html: str, section_name: str) -> str:
     return html[start:end]
 
 
-def extract_quick_hits(html: str) -> str:
+def extract_quick_hits(html: str):
     """Pulls out just the Quick Hits section as clean text, using the real
-    HTML structure to find its boundaries precisely."""
-    section_html = extract_section_html(html, "Quick Hits")
-    return html_fragment_to_text(section_html)
+    HTML structure to find its boundaries precisely.
+
+    If 1440 changes their template and "Quick Hits" can't be found, falls
+    back to reading the entire digest instead of failing the whole run —
+    better to get the full briefing occasionally than none at all.
+
+    Returns (text, used_fallback).
+    """
+    try:
+        section_html = extract_section_html(html, "Quick Hits")
+        return html_fragment_to_text(section_html), False
+    except RuntimeError as e:
+        print(f"WARNING: {e}")
+        print("Falling back to reading the entire digest instead.")
+        return html_fragment_to_text(html), True
 
 
 def strip_more_links(text: str) -> str:
@@ -199,13 +211,13 @@ def strip_more_links(text: str) -> str:
     return text.strip()
 
 
-def build_feed(text: str) -> list:
+def build_feed(text: str, title: str = "1440 Quick Hits") -> list:
     now = datetime.now(timezone.utc)
     return [
         {
             "uid": now.strftime("1440-%Y%m%d"),
             "updateDate": now.strftime("%Y-%m-%dT%H:%M:%S.0Z"),
-            "titleText": "1440 Quick Hits",
+            "titleText": title,
             "mainText": text,
             "redirectionUrl": "https://join1440.com",
         }
@@ -217,16 +229,18 @@ def main():
     full_text = clean_text(html)  # used only to find the greeting line
 
     greeting = extract_greeting(full_text)
-    quick_hits = extract_quick_hits(html)
+    quick_hits, used_fallback = extract_quick_hits(html)
 
     final_text = f"{greeting}\n\n{quick_hits}" if greeting else quick_hits
 
-    feed = build_feed(final_text)
+    title = "1440 Daily Digest" if used_fallback else "1440 Quick Hits"
+    feed = build_feed(final_text, title=title)
 
     with open("feed.json", "w", encoding="utf-8") as f:
         json.dump(feed, f, ensure_ascii=False, indent=2)
 
     print("feed.json updated successfully.")
+    print(f"Mode: {'FULL DIGEST (fallback)' if used_fallback else 'Quick Hits only'}")
     print(f"Digest length: {len(final_text)} characters")
 
 
