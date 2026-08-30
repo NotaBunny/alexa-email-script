@@ -88,23 +88,36 @@ def fetch_latest_digest_html() -> str:
     return html_body
 
 
-def html_fragment_to_text(html_fragment: str) -> str:
-    """Converts an HTML fragment to clean plain text, applying the same
-    boilerplate/junk-line filtering used everywhere else."""
+def get_raw_text(html_fragment: str) -> str:
+    """Converts an HTML fragment to raw plain text with no filtering applied
+    yet — needed because strip_more_links() must run before junk-line
+    filtering (see note there)."""
     soup = BeautifulSoup(html_fragment, "html.parser")
     for tag in soup(["script", "style"]):
         tag.decompose()
+    return soup.get_text(separator="\n")
 
-    text = soup.get_text(separator="\n")
+
+def filter_junk_lines(text: str) -> str:
+    """Drops boilerplate lines (SKIP_PHRASES) and stray leftover
+    punctuation-only lines. Must run AFTER strip_more_links(), not before —
+    otherwise the bare "(" and ")" lines that BeautifulSoup splits onto
+    their own line get deleted here first, breaking the pairing that
+    strip_more_links needs to correctly bound each "(More)" marker."""
     lines = [line.strip() for line in text.split("\n") if line.strip()]
-
     filtered = [
         line for line in lines
         if not any(phrase in line.lower() for phrase in SKIP_PHRASES)
-        and len(line.strip(" .|")) > 1  # drops stray lines like "." or "|"
+        and len(line.strip(" .|()")) > 0
     ]
-
     return "\n".join(filtered)
+
+
+def html_fragment_to_text(html_fragment: str) -> str:
+    """Full pipeline: raw text -> strip (More) markers -> filter junk lines."""
+    text = get_raw_text(html_fragment)
+    text = strip_more_links(text)
+    return filter_junk_lines(text)
 
 
 def clean_text(html: str) -> str:
@@ -172,12 +185,14 @@ def strip_more_links(text: str) -> str:
     """Removes "(More)" / "(More, w/video)" style link markers and the
     leftover " | " separators between them, so Alexa doesn't read them aloud.
 
-    Note: BeautifulSoup's get_text(separator="\\n") puts the opening "(",
-    the word "More", and the closing ")" on separate lines (since they
-    came from separate HTML tags), so this has to tolerate whitespace/
-    newlines between them rather than assuming "(More)" is contiguous.
+    Must run on RAW text (before filter_junk_lines) — see that function's
+    docstring for why.
+
+    The inner content is capped at 40 chars and can't contain another "("
+    or ")", so even in an unexpected edge case this can't "run away" and
+    swallow entire headlines between one leftover "(" and a distant ")".
     """
-    text = re.sub(r"\(\s*More[^)]*\)", "", text, flags=re.IGNORECASE | re.DOTALL)
+    text = re.sub(r"\(\s*More[^()]{0,40}\)", "", text, flags=re.IGNORECASE | re.DOTALL)
     text = re.sub(r"\s*\|\s*", " ", text)
     text = re.sub(r"[ \t]+", " ", text)
     text = re.sub(r"\n\s*", "\n", text)
@@ -203,7 +218,6 @@ def main():
 
     greeting = extract_greeting(full_text)
     quick_hits = extract_quick_hits(html)
-    quick_hits = strip_more_links(quick_hits)
 
     final_text = f"{greeting}\n\n{quick_hits}" if greeting else quick_hits
 
