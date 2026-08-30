@@ -1,0 +1,44 @@
+# Save this file at: .github/workflows/daily.yml in your repo root.
+#
+# Runs update_feed.py every morning and commits the refreshed feed.json.
+# Set two repo secrets first (Settings -> Secrets and variables -> Actions):
+#   GMAIL_USER
+#   GMAIL_APP_PASSWORD
+
+name: Update 1440 Flash Briefing
+
+on:
+  schedule:
+    # Cron is in UTC. Example below runs at 12:00 UTC, which is 6:00 AM
+    # Mountain Daylight Time (UTC-6). Adjust for your wake time and note
+    # this shifts by an hour when daylight saving changes (MST is UTC-7).
+    - cron: "0 12 * * *"
+  workflow_dispatch: {}  # lets you trigger it manually from the Actions tab to test
+
+jobs:
+  update-feed:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install dependencies
+        run: pip install beautifulsoup4
+
+      - name: Run script
+        env:
+          GMAIL_USER: ${{ secrets.GMAIL_USER }}
+          GMAIL_APP_PASSWORD: ${{ secrets.GMAIL_APP_PASSWORD }}
+        run: python update_feed.py
+
+      - name: Commit updated feed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add feed.json
+          git commit -m "Update 1440 flash briefing feed" || echo "No changes to commit"
+          git push
