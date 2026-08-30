@@ -33,6 +33,9 @@ SENDER_FILTER = "dailydigest@email.join1440.com"
 # as you notice leftover boilerplate in your briefings).
 SKIP_PHRASES = [
     "unsubscribe",
+    "News for the insatiably curious.",
+    "View email in browser",
+    "In partnership with",
     "advertise",
     "sponsored by",
     "view in browser",
