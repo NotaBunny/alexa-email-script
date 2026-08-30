@@ -19,6 +19,7 @@ import imaplib
 import email
 import json
 import os
+import re
 from datetime import datetime, timezone
 
 from bs4 import BeautifulSoup
@@ -33,19 +34,18 @@ SENDER_FILTER = "dailydigest@email.join1440.com"
 # as you notice leftover boilerplate in your briefings).
 SKIP_PHRASES = [
     "unsubscribe",
-    "News for the insatiably curious.",
-    "View email in browser",
-    "In partnership with",
     "advertise",
     "sponsored by",
     "view in browser",
-    "View in browser.",
-    "First time reading? Join over 4.7 million insatiably curious readers.",
-    "Sign up here.",
-    "﻿Don’t keep us a secret: Share the email with friends, or share via SMS/social.",
+    "view email in browser",
     "forward to a friend",
     "update your preferences",
     "privacy policy",
+    "in partnership with",
+    "first time reading",
+    "sign up here",
+    "insatiably curious",
+    "please support our sponsors",
 ]
 
 
@@ -100,9 +100,72 @@ def clean_text(html: str) -> str:
     filtered = [
         line for line in lines
         if not any(phrase in line.lower() for phrase in SKIP_PHRASES)
+        and len(line.strip(" .|")) > 1  # drops stray lines like "." or "|"
     ]
 
     return "\n".join(filtered)
+
+
+def extract_greeting(text: str) -> str:
+    """Pulls out the 'Good morning, it's [date].' line to use as an intro."""
+    for line in text.split("\n"):
+        if line.strip().lower().startswith("good morning"):
+            return line.strip()
+    return ""
+
+
+def extract_quick_hits(text: str) -> str:
+    """Pulls out just the "Quick Hits" section from the full digest text.
+
+    1440's format: a standalone line reading "Quick Hits", then a series of
+    bold headline + description lines, until the next section heading
+    (a short standalone line like "Humankind") appears.
+    """
+    lines = text.split("\n")
+
+    start_idx = None
+    for i, line in enumerate(lines):
+        if line.strip().lower() == "quick hits":
+            start_idx = i + 1
+            break
+
+    if start_idx is None:
+        print("WARNING: couldn't find a 'Quick Hits' heading — returning full digest instead.")
+        return text
+
+    def looks_like_next_heading(line: str) -> bool:
+        stripped = line.strip()
+        if not stripped:
+            return False
+        if "(more" in stripped.lower():
+            return False
+        if stripped.endswith((".", "?", "!", ":", ",")):
+            return False
+        words = stripped.split()
+        if len(words) > 4:
+            return False
+        capitalized = sum(1 for w in words if w[:1].isupper())
+        return capitalized >= max(1, len(words) - 1)
+
+    end_idx = len(lines)
+    for i in range(start_idx, len(lines)):
+        if looks_like_next_heading(lines[i]):
+            end_idx = i
+            break
+
+    quick_hits_lines = [line for line in lines[start_idx:end_idx] if line.strip()]
+    return "\n".join(quick_hits_lines)
+
+
+def strip_more_links(text: str) -> str:
+    """Removes "(More)" / "(More, w/video)" style link markers and the
+    leftover " | " separators between them, so Alexa doesn't read them aloud.
+    """
+    text = re.sub(r"\(More[^)]*\)", "", text)
+    text = re.sub(r"\s*\|\s*", " ", text)
+    text = re.sub(r"[ \t]+", " ", text)
+    text = re.sub(r"\n ", "\n", text)
+    return text.strip()
 
 
 def build_feed(text: str) -> list:
@@ -111,7 +174,7 @@ def build_feed(text: str) -> list:
         {
             "uid": now.strftime("1440-%Y%m%d"),
             "updateDate": now.strftime("%Y-%m-%dT%H:%M:%S.0Z"),
-            "titleText": "1440 Daily Digest",
+            "titleText": "1440 Quick Hits",
             "mainText": text,
             "redirectionUrl": "https://join1440.com",
         }
@@ -121,7 +184,14 @@ def build_feed(text: str) -> list:
 def main():
     html = fetch_latest_digest_html()
     text = clean_text(html)
-    feed = build_feed(text)
+
+    greeting = extract_greeting(text)
+    quick_hits = extract_quick_hits(text)
+    quick_hits = strip_more_links(quick_hits)
+
+    final_text = f"{greeting}\n\n{quick_hits}" if greeting else quick_hits
+
+    feed = build_feed(final_text)
 
     with open("feed.json", "w", encoding="utf-8") as f:
         json.dump(feed, f, ensure_ascii=False, indent=2)
