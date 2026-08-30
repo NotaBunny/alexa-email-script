@@ -46,7 +46,6 @@ SKIP_PHRASES = [
     "sign up here",
     "insatiably curious",
     "please support our sponsors",
-    "more"
 ]
 
 
@@ -172,11 +171,16 @@ def extract_quick_hits(html: str) -> str:
 def strip_more_links(text: str) -> str:
     """Removes "(More)" / "(More, w/video)" style link markers and the
     leftover " | " separators between them, so Alexa doesn't read them aloud.
+
+    Note: BeautifulSoup's get_text(separator="\\n") puts the opening "(",
+    the word "More", and the closing ")" on separate lines (since they
+    came from separate HTML tags), so this has to tolerate whitespace/
+    newlines between them rather than assuming "(More)" is contiguous.
     """
-    text = re.sub(r"\(More[^)]*\)", "", text)
+    text = re.sub(r"\(\s*More[^)]*\)", "", text, flags=re.IGNORECASE | re.DOTALL)
     text = re.sub(r"\s*\|\s*", " ", text)
     text = re.sub(r"[ \t]+", " ", text)
-    text = re.sub(r"\n ", "\n", text)
+    text = re.sub(r"\n\s*", "\n", text)
     return text.strip()
 
 
