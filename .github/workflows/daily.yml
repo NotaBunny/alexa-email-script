@@ -8,19 +8,6 @@
 name: Update 1440 Flash Briefing
 
 on:
-  schedule:
-    # Cron is in UTC. 11:00 UTC = 5:00 AM Mountain Daylight Time (UTC-6).
-    # When daylight saving ends (~early November) and it becomes Mountain
-    # Standard Time (UTC-7), change both lines below to 12:00/12:10 UTC
-    # to stay at 5:00 AM.
-    - cron: "40 14 * * *"
-    # Backup trigger 10 minutes later — GitHub's scheduled runs are
-    # "best effort" and occasionally get delayed or dropped entirely,
-    # especially on lower-activity repos. If the first one already ran
-    # today, this one just runs again harmlessly (it'll simply refetch
-    # today's email and overwrite feed.json with the same content).
-    - cron: "45 14 * * *"
-    - cron: "22 11 * * *"
   workflow_dispatch: {}  # lets you trigger it manually from the Actions tab to test
 
 jobs:
