@@ -26,10 +26,8 @@ from bs4 import BeautifulSoup
 GMAIL_USER = os.environ["GMAIL_USER"]
 GMAIL_APP_PASSWORD = os.environ["GMAIL_APP_PASSWORD"]
 
-# Adjust this to match how 1440's emails actually show up in your inbox.
-# Check the "From" field of a real 1440 email and use a snippet of it here,
-# e.g. "join1440.com" or "1440 Daily Digest".
-SENDER_FILTER = "1440 Daily Digest"
+# Matches the actual sender address on 1440's emails.
+SENDER_FILTER = "dailydigest@email.join1440.com"
 
 # Phrases to strip out so they don't get read aloud (tune this over time
 # as you notice leftover boilerplate in your briefings).
@@ -49,12 +47,17 @@ def fetch_latest_digest_html() -> str:
     imap.login(GMAIL_USER, GMAIL_APP_PASSWORD)
     imap.select("INBOX")
 
-    today = datetime.now().strftime("%d-%b-%Y")
-    status, data = imap.search(None, f'(FROM "{SENDER_FILTER}" SINCE "{today}")')
+    # No date filter here on purpose — searching "SINCE today" is fragile
+    # around midnight/timezone boundaries on a UTC-based CI runner. We just
+    # grab the newest matching email instead, which is what we want anyway.
+    status, data = imap.search(None, f'(FROM "{SENDER_FILTER}")')
 
     if status != "OK" or not data or not data[0]:
         imap.logout()
-        raise RuntimeError("No 1440 email found for today. Check SENDER_FILTER and that it's arrived yet.")
+        raise RuntimeError(
+            "No 1440 email found at all. Double-check SENDER_FILTER matches "
+            "the exact sender address on a real 1440 email in your inbox."
+        )
 
     latest_id = data[0].split()[-1]
     status, msg_data = imap.fetch(latest_id, "(RFC822)")
