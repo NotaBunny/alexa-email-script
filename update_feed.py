@@ -88,9 +88,10 @@ def fetch_latest_digest_html() -> str:
     return html_body
 
 
-def clean_text(html: str) -> str:
-    soup = BeautifulSoup(html, "html.parser")
-
+def html_fragment_to_text(html_fragment: str) -> str:
+    """Converts an HTML fragment to clean plain text, applying the same
+    boilerplate/junk-line filtering used everywhere else."""
+    soup = BeautifulSoup(html_fragment, "html.parser")
     for tag in soup(["script", "style"]):
         tag.decompose()
 
@@ -106,6 +107,10 @@ def clean_text(html: str) -> str:
     return "\n".join(filtered)
 
 
+def clean_text(html: str) -> str:
+    return html_fragment_to_text(html)
+
+
 def extract_greeting(text: str) -> str:
     """Pulls out the 'Good morning, it's [date].' line to use as an intro."""
     for line in text.split("\n"):
@@ -114,47 +119,53 @@ def extract_greeting(text: str) -> str:
     return ""
 
 
-def extract_quick_hits(text: str) -> str:
-    """Pulls out just the "Quick Hits" section from the full digest text.
+# 1440 renders each section title (e.g. "Quick Hits", "Humankind") as a
+# highlighted span at font-size 24px — visually distinct from the plain
+# bold item headlines (font-size 15px <strong> tags) inside each section.
+# Matching on this exact markup is far more reliable than guessing from
+# flattened text, since headline text alone can look just as "heading-like."
+SECTION_HEADING_PATTERN = re.compile(
+    r'<span style="font-size:24px"><span style="background-color:#[0-9a-fA-F]{3,6}">(.*?)</span></span>',
+    re.IGNORECASE | re.DOTALL,
+)
 
-    1440's format: a standalone line reading "Quick Hits", then a series of
-    bold headline + description lines, until the next section heading
-    (a short standalone line like "Humankind") appears.
-    """
-    lines = text.split("\n")
 
+def extract_section_html(html: str, section_name: str) -> str:
+    """Returns the raw HTML between a named section heading and the next
+    section heading (or end of document if it's the last section)."""
+    matches = list(SECTION_HEADING_PATTERN.finditer(html))
+
+    if not matches:
+        raise RuntimeError(
+            "No section headings found at all — 1440's email template may "
+            "have changed. Check the raw HTML structure again."
+        )
+
+    start = None
     start_idx = None
-    for i, line in enumerate(lines):
-        if line.strip().lower() == "quick hits":
-            start_idx = i + 1
+    for i, m in enumerate(matches):
+        title = BeautifulSoup(m.group(1), "html.parser").get_text(strip=True)
+        if title.strip().lower() == section_name.lower():
+            start = m.end()
+            start_idx = i
             break
 
-    if start_idx is None:
-        print("WARNING: couldn't find a 'Quick Hits' heading — returning full digest instead.")
-        return text
+    if start is None:
+        found = [BeautifulSoup(m.group(1), "html.parser").get_text(strip=True) for m in matches]
+        raise RuntimeError(
+            f"Could not find a '{section_name}' section heading. "
+            f"Sections found in today's email: {found}"
+        )
 
-    def looks_like_next_heading(line: str) -> bool:
-        stripped = line.strip()
-        if not stripped:
-            return False
-        if "(more" in stripped.lower():
-            return False
-        if stripped.endswith((".", "?", "!", ":", ",")):
-            return False
-        words = stripped.split()
-        if len(words) > 4:
-            return False
-        capitalized = sum(1 for w in words if w[:1].isupper())
-        return capitalized >= max(1, len(words) - 1)
+    end = matches[start_idx + 1].start() if start_idx + 1 < len(matches) else len(html)
+    return html[start:end]
 
-    end_idx = len(lines)
-    for i in range(start_idx, len(lines)):
-        if looks_like_next_heading(lines[i]):
-            end_idx = i
-            break
 
-    quick_hits_lines = [line for line in lines[start_idx:end_idx] if line.strip()]
-    return "\n".join(quick_hits_lines)
+def extract_quick_hits(html: str) -> str:
+    """Pulls out just the Quick Hits section as clean text, using the real
+    HTML structure to find its boundaries precisely."""
+    section_html = extract_section_html(html, "Quick Hits")
+    return html_fragment_to_text(section_html)
 
 
 def strip_more_links(text: str) -> str:
@@ -183,10 +194,10 @@ def build_feed(text: str) -> list:
 
 def main():
     html = fetch_latest_digest_html()
-    text = clean_text(html)
+    full_text = clean_text(html)  # used only to find the greeting line
 
-    greeting = extract_greeting(text)
-    quick_hits = extract_quick_hits(text)
+    greeting = extract_greeting(full_text)
+    quick_hits = extract_quick_hits(html)
     quick_hits = strip_more_links(quick_hits)
 
     final_text = f"{greeting}\n\n{quick_hits}" if greeting else quick_hits
@@ -197,7 +208,7 @@ def main():
         json.dump(feed, f, ensure_ascii=False, indent=2)
 
     print("feed.json updated successfully.")
-    print(f"Digest length: {len(text)} characters")
+    print(f"Digest length: {len(final_text)} characters")
 
 
 if __name__ == "__main__":
