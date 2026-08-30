@@ -29,7 +29,7 @@ GMAIL_APP_PASSWORD = os.environ["GMAIL_APP_PASSWORD"]
 # Adjust this to match how 1440's emails actually show up in your inbox.
 # Check the "From" field of a real 1440 email and use a snippet of it here,
 # e.g. "join1440.com" or "1440 Daily Digest".
-SENDER_FILTER = "1440"
+SENDER_FILTER = "dailydigest@email.join1440.com"
 
 # Phrases to strip out so they don't get read aloud (tune this over time
 # as you notice leftover boilerplate in your briefings).
