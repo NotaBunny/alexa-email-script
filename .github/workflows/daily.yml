@@ -12,7 +12,7 @@ on:
     # Cron is in UTC. Example below runs at 12:00 UTC, which is 6:00 AM
     # Mountain Daylight Time (UTC-6). Adjust for your wake time and note
     # this shifts by an hour when daylight saving changes (MST is UTC-7).
-    - cron: "0 12 * * *"
+    - cron: "0 11 * * *"
   workflow_dispatch: {}  # lets you trigger it manually from the Actions tab to test
 
 jobs:
